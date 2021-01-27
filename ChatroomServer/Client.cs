@@ -11,104 +11,93 @@ using System.Threading.Tasks;
 namespace ChatroomServer
 {
     class Client
-    {        
-        internal IPAddress ip;
-        internal int port;
-        internal string usuario;
-        internal Socket s;
-        IPEndPoint ie;
-        internal string nick;
+    {
+        internal Socket S { set; get; }
+        IPEndPoint Ie { set; get; }
+        internal IPAddress Ip { set; get; }
+        internal int Port { set; get; }
+        internal string UserName { set; get; }        
+        internal string Nick { set; get; }  //username@ip
 
-        const string CMD_SALIR = "#salir";
-        const string CMD_LISTA = "#lista";
+        const string CMD_EXIT = "#exit";
+        const string CMD_LIST = "#list";
 
         internal bool connected = false;
         internal bool connectedChat = false;
        
         public Client(Socket socket)
         {
-            s = socket;
+            S = socket;
 
-            ie = (IPEndPoint)socket.RemoteEndPoint;
-            port = ie.Port;
+            Ie = (IPEndPoint)socket.RemoteEndPoint;
+            Port = Ie.Port;
 
             String localHost = Dns.GetHostName();
-            infoHostClient(localHost);
+            InfoHostClient(localHost);
 
-            Thread t = new Thread(chat);
+            Thread t = new Thread(Chat);
             t.Start();
         }
 
-        private void infoHostClient(string name)
+        private void InfoHostClient(string name)
         {
             IPHostEntry hostInfo;
             hostInfo = Dns.GetHostEntry(name);
-            //usuario = hostInfo.HostName;
-            foreach (IPAddress ips in hostInfo.AddressList)
+            foreach (IPAddress ip in hostInfo.AddressList)
             {
-                if (ips.AddressFamily == AddressFamily.InterNetwork)
+                if (ip.AddressFamily == AddressFamily.InterNetwork)
                 {
-                   ip = ips;
+                   Ip = ip;
                 }
             }
         }
 
-        private void introChat()
+        private void IntroChat()
         {
             string mensaje = null;
             try
             {
-                using (NetworkStream ns = new NetworkStream(s))
+                using (NetworkStream ns = new NetworkStream(S))
                 using (StreamReader sr = new StreamReader(ns))
                 using (StreamWriter sw = new StreamWriter(ns))
                 {
                     string welcome = "Welcome to this great Server: ";
                     sw.WriteLine(welcome);
                     sw.Flush();
-
-                    //nick = string.Format("{0}@{1}", usuario, ip);
-                    //string nuevo = string.Format("Connected with client {0} at port {1}", nick, port);
-                    //lock (l)
-                    //{
-                    //    Server.pasarMensaje(nuevo, this, false);
-                    //    connectedChat = true;
-                    //    connected = true;
-                    //}
                         
                     while (!connected)
                     {
-                        sw.WriteLine("Introduce nombre de usuario");
+                        sw.WriteLine("Introduce user name");
                         sw.Flush();
                         mensaje = sr.ReadLine();
 
                         if (mensaje != null && mensaje.Trim().Length > 0)
                         {
-                            usuario = mensaje;                            
-                            nick = string.Format("{0}@{1}", usuario, ip);
-                            string nuevo = string.Format("Connected with client {0} at port {1}", nick, port);
-                            Server.pasarMensaje(nuevo, this, false);
+                            UserName = mensaje;                            
+                            Nick = string.Format("{0}@{1}", UserName, Ip);
+                            string nuevo = string.Format("Connected with client {0} at port {1}", Nick, Port);
+                            Server.ShareMessage(nuevo, this, false);
                             connected = true;
-                            connectedChat = true;
-                                                           
+                            connectedChat = true;                                                           
                         }
                     }
                 }
             }
             catch (IOException)
             {
-                finConexion(false);
+                EndConnection(false);
             }                
         }
 
-        public void chat()
+        public void Chat()
         {
-            string mensaje = "";
+            string menssage = "";
 
-            introChat();
+            IntroChat();
 
             if (connected)
             {
-                using (NetworkStream ns = new NetworkStream(s))
+                using (NetworkStream ns = new NetworkStream(S))
                 using (StreamReader sr = new StreamReader(ns))
                 using (StreamWriter sw = new StreamWriter(ns))
                 {
@@ -118,69 +107,66 @@ namespace ChatroomServer
                         {
                             while (connectedChat)
                             {
-                                mensaje = sr.ReadLine();
-                                if (mensaje != null)
+                                menssage = sr.ReadLine();
+                                if (menssage != null)
                                 {
-                                    if (mensaje.Length > 0)
+                                    if (menssage.Length > 0)
                                     {
-                                        if (!comandos(mensaje.Trim(), sw))
+                                        if (!Commands(menssage.Trim(), sw))
                                         {
-                                            Server.pasarMensaje(mensaje, this, true);
-                                        }                                            
+                                            Server.ShareMessage(menssage, this, true);
+                                        }                                        
                                     }
                                 }
                                 else
                                 {
-                                    finConexion(true);
+                                    EndConnection(true);
                                 }
                             }
-                            if (mensaje != null)
+                            if (menssage != null)
                             {
-                                mensaje = sr.ReadLine();
-                                comandos(mensaje, sw);
+                                menssage = sr.ReadLine();
+                                Commands(menssage, sw);
                             }                                                       
                         }
-                        finConexion(false);
+                        EndConnection(false);
                     }
                     catch (IOException)
                     {
-                        finConexion(true);
+                        EndConnection(true);
                     }
-                }                                             
-                
+                }                                                             
             }           
         }
 
 
-        private void finConexion(bool mensaje)
-        {
-            
-            if (mensaje)
+        private void EndConnection(bool msg)
+        {            
+            if (msg)
             {
-                Server.pasarMensaje(nick+" disconnected ", this, false);
+                Server.ShareMessage(Nick+" disconnected ", this, false);
             }
             lock (Server.l)
             {
-                s.Close();
-                Server.disconnect(this);
+                S.Close();
+                Server.Disconnect(this);        
                 connectedChat = false;
                 connected = false;
-            }            
-            
+            }                        
         }
         
-        private bool comandos(string msg, StreamWriter sw)
+        private bool Commands(string msg, StreamWriter sw)
         {
             switch (msg)
             {
-                case CMD_LISTA:
-                    Server.lista(this);
+                case CMD_LIST:
+                    Server.List(this);
                     return true;
 
-                case CMD_SALIR:
+                case CMD_EXIT:
                     connectedChat = !connectedChat;
-                    Server.pasarMensaje(usuario + (connectedChat?" connected ":" disconnected ")+"chat", this, false);
-                    sw.WriteLine("------ "+ usuario + (connectedChat?" connected ":" disconnected ")+"chat");
+                    Server.ShareMessage(UserName + (connectedChat?" connected ":" disconnected ")+"chat", this, false);
+                    sw.WriteLine("------ "+ UserName + (connectedChat?" connected ":" disconnected ")+"chat");
                     sw.Flush();                                       
                     return true;
             }

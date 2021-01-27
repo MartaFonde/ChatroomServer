@@ -15,7 +15,7 @@ namespace ChatroomServer
         static readonly internal object l = new object();   //en cada acceso a clients --> recurso común
         static List<Client> clients = new List<Client>();
 
-        public static bool pasarMensaje(string mensaje, Client c, bool nick)   
+        internal static bool ShareMessage(string mensaje, Client c, bool nick)   
         {
             string msg;
             lock (l)
@@ -24,7 +24,7 @@ namespace ChatroomServer
                 {
                     if (nick)
                     {
-                        msg = string.Format("{0}: {1}", c.nick, mensaje);
+                        msg = string.Format("{0}: {1}", c.Nick, mensaje);
                     }
                     else
                     {
@@ -34,10 +34,10 @@ namespace ChatroomServer
                     //lock
                     for (int i = 0; i < clients.Count; i++)
                     {
-                        IPEndPoint ieEscoita = (IPEndPoint)clients[i].s.RemoteEndPoint;
-                        if (ieEscoita.Port != c.port && clients[i].connected && clients[i].connectedChat)
+                        IPEndPoint ieReceptor = (IPEndPoint)clients[i].S.RemoteEndPoint;
+                        if (ieReceptor.Port != c.Port && clients[i].connected && clients[i].connectedChat)
                         {
-                            using (NetworkStream ns = new NetworkStream(clients.ElementAt(i).s))
+                            using (NetworkStream ns = new NetworkStream(clients.ElementAt(i).S))
                             using (StreamReader sr = new StreamReader(ns))
                             using (StreamWriter sw = new StreamWriter(ns))
                             {
@@ -53,27 +53,26 @@ namespace ChatroomServer
                             }
                         }
                     }
-
                     return true;
                 }                
             }
             return false;                   
         }        
 
-        public static void disconnect(Client c)
+        internal static void Disconnect(Client c)
         {
             clients.Remove(c);               
         }
 
-        internal static void lista(Client c)
+        internal static void List(Client c)
         {
             lock (l)
             {
                 for (int i = 0; i < clients.Count; i++)
                 {
-                    if (c.port == clients[i].port)
+                    if (c.Port == clients[i].Port)
                     {
-                        using (NetworkStream ns = new NetworkStream(c.s))
+                        using (NetworkStream ns = new NetworkStream(c.S))
                         using (StreamReader sr = new StreamReader(ns))
                         using (StreamWriter sw = new StreamWriter(ns))
                         {
@@ -83,7 +82,7 @@ namespace ChatroomServer
                                 {
                                     if (clients[i].connectedChat)
                                     {
-                                        sw.WriteLine(clients[i].nick);
+                                        sw.WriteLine(clients[i].Nick);
                                         sw.Flush();
                                     }
                                 }
@@ -91,7 +90,7 @@ namespace ChatroomServer
                             catch (IOException ex)
                             {
                                 sw.Write("Error: " + ex.Message);
-                                Console.WriteLine("Error al listar: " + ex.Message);
+                                Console.WriteLine("Error to list: " + ex.Message);
                             }
                         }
                         break;
@@ -102,31 +101,42 @@ namespace ChatroomServer
 
         static void Main(string[] args)
         {
-            int port = 31416;           
+            int port = 31416;
+            bool portFree = false;
             IPEndPoint ie = new IPEndPoint(IPAddress.Any, port);
 
             using (Socket server = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
             {
-                try
+                while (!portFree)
                 {
-                    server.Bind(ie);
-                    server.Listen(10);
-
-                    Console.WriteLine("Server waiting at port {0}", ie.Port);
-
-                    while (true)
+                    try
                     {
-                        Socket sClient = server.Accept();
-                        lock (l)
+                        server.Bind(ie);
+                        server.Listen(10);
+                        portFree = true;
+
+                        Console.WriteLine("Server waiting at port {0}", ie.Port);
+
+                        while (true)
                         {
-                            clients.Add(new Client(sClient));  //lanzamos hilo
+                            Socket sClient = server.Accept();
+                            lock (l)
+                            {
+                                clients.Add(new Client(sClient));  //lanzamos hilo
+                            }
                         }
                     }
-                }
-                catch (SocketException e)
-                {
-                    Console.WriteLine("Error: "+e.Message);
-                }               
+                    catch (SocketException e) when (e.ErrorCode == (int)SocketError.AddressAlreadyInUse)
+                    {
+                        Console.WriteLine($"Port {port} in use");
+                        portFree = false;
+                        port++;
+                    }
+                    catch (SocketException e)
+                    {
+                        Console.WriteLine("Error: " + e.Message);
+                    }
+                }                     
             }
         }
     }
